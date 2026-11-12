@@ -1,0 +1,105 @@
+# (a) 프로젝트 devfile 방식 — 리포 루트에 두면 Dev Spaces / Eclipse Che 가 워크스페이스를 만들 때 읽는다.
+# 시드 리포(demo/seed-repo)의 devfile.yaml 은 이 파일을 그대로 복사한 것이다(build_seed.sh).
+#
+# 고정 규칙(실제 엔진이 붙어도 바꾸지 않는다)
+#   - 엔진 컨테이너 컴포넌트 이름: techscan
+#   - 명령 id: techscan-verify-changes (devfile id 는 콜론 불가 → 화면 표시 label 을 techscan:verify-changes 로 둔다)
+#   - 명령 형태: python -m engine.cli scan . --diff <base>..HEAD --format sarif
+# 바꿀 수 있는 것: techscanImage(엔진 이미지), techscanBaseRef(비교 기준 git ref), techscanVerifierUrl(검증 모델 주소), techscanGeneratorModel(생성 모델 식별자)
+schemaVersion: 2.2.2
+metadata:
+  name: account-api
+  displayName: Account API (TechScan demo seed)
+  description: eGovFrame-style Spring Boot account lookup API with TechScan change verification
+  language: Java
+  projectType: springboot
+  version: 0.1.0
+variables:
+  techscanImage: registry.access.redhat.com/ubi9/python-312:latest
+  techscanBaseRef: baseline
+  # 검증 모델(클러스터 내부 서비스). 비우면 규칙 검사만. 클러스터 밖·공개 주소는 엔진이 기동 거부(R2).
+  techscanVerifierUrl: http://techscan-verifier.techscan.svc:8080/v1
+  # 생성 모델 식별자(SARIF techdd.generatorModel). 데모는 실명 대신 별칭.
+  techscanGeneratorModel: generator-model
+components:
+  - name: tools
+    container:
+      image: registry.access.redhat.com/ubi9/openjdk-17:latest
+      command: ["tail", "-f", "/dev/null"]
+      memoryLimit: 1536Mi
+      cpuLimit: "1"
+      cpuRequest: 100m            # Sandbox 할당량(요청 합계 3코어) 안에 들도록 요청은 작게, 한도는 그대로
+      memoryRequest: 512Mi
+      mountSources: true
+      endpoints:
+        - name: account-api
+          targetPort: 8080
+          exposure: public
+          path: /api/accounts?custId=C0001
+  - name: techscan
+    container:
+      image: "{{techscanImage}}"
+      # 유지 명령 + (엔진 이미지에 있으면) MCP 중계기를 Pod 루프백 127.0.0.1:7777 에 띄운다 — 가정(G-T-23, Red Hat 회신 대기)
+      command: ["sh", "-c", "if command -v techscan-mcp-bridge >/dev/null 2>&1; then techscan-mcp-bridge & fi; exec tail -f /dev/null"]
+      memoryLimit: 3Gi
+      cpuLimit: "2"
+      cpuRequest: 250m            # Sandbox 할당량(요청 합계 3코어) 안에 들도록 요청은 작게, 한도는 그대로
+      memoryRequest: 512Mi
+      mountSources: true
+      env:
+        - name: TECHSCAN_BASE_REF
+          value: "{{techscanBaseRef}}"
+        - name: TECHSCAN_VERIFIER_URL
+          value: "{{techscanVerifierUrl}}"
+        - name: TECHSCAN_GENERATOR_MODEL
+          value: "{{techscanGeneratorModel}}"
+        - name: ALLOW_EXTERNAL_LLM
+          value: "false"
+commands:
+  - id: maven-package
+    exec:
+      label: "maven: package"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: mvn -B package
+      group:
+        kind: build
+        isDefault: true
+  - id: run-account-api
+    exec:
+      label: "run: account-api"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: java -jar target/account-api-1.0.0.jar
+      group:
+        kind: run
+        isDefault: true
+  - id: techscan-verify-changes
+    exec:
+      label: "techscan:verify-changes"
+      component: techscan
+      workingDir: ${PROJECT_SOURCE}
+      # TECHSCAN_VERIFIER_URL 이 있으면 검증 모델 판정(--verify)까지, 없으면 규칙 검사만 한다.
+      # techscan-summary(엔진 이미지에만 있음)가 터미널에 한국어 요약을 낸다 — 모델 실명 대신 별칭만 표시.
+      commandLine: >-
+        mkdir -p .techscan &&
+        python -m engine.cli scan . --diff "${TECHSCAN_BASE_REF}..HEAD" --format sarif
+        --out .techscan/result.sarif --generator-model "${TECHSCAN_GENERATOR_MODEL:-unknown}"
+        ${TECHSCAN_VERIFIER_URL:+--verify --verifier-url "$TECHSCAN_VERIFIER_URL"};
+        rc=$?;
+        if command -v techscan-summary >/dev/null 2>&1; then techscan-summary .techscan/result.sarif; fi;
+        echo "TechScan SARIF written: ${PROJECT_SOURCE}/.techscan/result.sarif (exit $rc)";
+        exit $rc
+      group:
+        kind: test
+  - id: assistant-config-init
+    exec:
+      label: "techscan: assistant config"
+      component: techscan
+      # 플랫폼팀이 넣은 어시스턴트 설정(ConfigMap 자동 마운트, 읽기 전용)을 쓰기 가능한 영구 홈으로 복사한다. 실패해도 기동은 계속(|| true).
+      commandLine: >-
+        if [ -d /home/user/.techscan-assistant ]; then mkdir -p /home/user/.continue &&
+        cp -n /home/user/.techscan-assistant/* /home/user/.continue/ ; fi || true
+events:
+  postStart:
+    - assistant-config-init

@@ -1,0 +1,15 @@
+# 계좌 조회 API 데모 - 모든 데이터는 가짜 값이다.
+server:
+  port: 8080
+spring:
+  application:
+    name: account-api
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+      encoding: UTF-8
+logging:
+  level:
+    egovframework: INFO
