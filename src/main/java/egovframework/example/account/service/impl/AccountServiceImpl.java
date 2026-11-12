@@ -32,6 +32,7 @@ public class AccountServiceImpl extends EgovAbstractServiceImpl implements Accou
     public List<AccountVO> selectAccountSearch(AccountSearchVO searchVO) throws Exception {
         List<AccountVO> list = accountDAO.selectAccountSearch(searchVO);
         for (AccountVO vo : list) {
+            vo.setAccountNo(MaskingUtil.maskAccountNo(vo.getAccountNo()));
             vo.setHolderNm(StringEscapeUtils.escapeHtml4(vo.getHolderNm()));
         }
         return list;
@@ -43,6 +44,7 @@ public class AccountServiceImpl extends EgovAbstractServiceImpl implements Accou
         if (vo == null) {
             throw processException("fail.common.msg");
         }
+        vo.setAccountNo(MaskingUtil.maskAccountNo(vo.getAccountNo()));
         return vo;
     }
 }

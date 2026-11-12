@@ -9,11 +9,18 @@
          ORDER BY OPEN_DE DESC
     </select>
 
+    <!-- 검색어는 바인드 변수(#{})로, 정렬 컬럼은 허용 목록으로만 받는다 -->
     <select id="selectAccountSearch" parameterType="egovframework.example.account.service.AccountSearchVO" resultType="accountVO">
         SELECT ACCOUNT_ID, CUST_ID, ACCOUNT_NO, HOLDER_NM, BANK_CD, BALANCE, OPEN_DE
           FROM TB_ACCOUNT
-         WHERE HOLDER_NM LIKE '%${holderNm}%'
-         ORDER BY ${sortColumn} DESC
+         WHERE HOLDER_NM LIKE '%' || #{holderNm} || '%'
+         ORDER BY
+        <choose>
+            <when test="sortColumn == 'BALANCE'">BALANCE</when>
+            <when test="sortColumn == 'HOLDER_NM'">HOLDER_NM</when>
+            <otherwise>OPEN_DE</otherwise>
+        </choose>
+         DESC
     </select>
 
     <select id="selectAccountDetail" parameterType="string" resultType="accountVO">
