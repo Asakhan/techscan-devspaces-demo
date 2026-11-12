@@ -9,4 +9,17 @@
          ORDER BY OPEN_DE DESC
     </select>
 
+    <select id="selectAccountSearch" parameterType="egovframework.example.account.service.AccountSearchVO" resultType="accountVO">
+        SELECT ACCOUNT_ID, CUST_ID, ACCOUNT_NO, HOLDER_NM, BANK_CD, BALANCE, OPEN_DE
+          FROM TB_ACCOUNT
+         WHERE HOLDER_NM LIKE '%${holderNm}%'
+         ORDER BY ${sortColumn} DESC
+    </select>
+
+    <select id="selectAccountDetail" parameterType="string" resultType="accountVO">
+        SELECT ACCOUNT_ID, CUST_ID, ACCOUNT_NO, HOLDER_NM, BANK_CD, BALANCE, OPEN_DE
+          FROM TB_ACCOUNT
+         WHERE ACCOUNT_ID = #{accountId}
+    </select>
+
 </mapper>
